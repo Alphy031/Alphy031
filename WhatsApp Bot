@@ -1,0 +1,50 @@
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode =require('qrcode-terminal');
+const low = require('lowdb');
+const FileSync = require('lowdb/adapters/FileSync');
+
+const adapter = new FileSync('db.json');
+const db = low(adapter);
+
+db.defaults({ sessions: [] }).write();
+
+const client = new Client({
+  authStrategy: new LocalAuth()
+});
+
+client.on('qr', (qr) => {
+  qrcode.generate(qr, { small: true });
+});
+
+client.on('ready', () => {
+  console.log('Client is ready!');
+});
+
+client.on('message', message => {
+  const from = message.from;
+  let session = db.get('sessions').find({ from }).value();
+
+  if (!session) {
+    session = { from, state: 'welcome' };
+    db.get('sessions').push(session).write();
+  }
+
+  if (session.state === 'welcome') {
+    message.reply('Hello! How can I assist you today?');
+    session.state = 'helping';
+  } else if (session.state === 'helping') {
+    if (message.body.toLowerCase().includes('agent')) {
+      message.reply('Connecting you to a human agent. Please wait...');
+      session.state = 'pending_human';
+      // Notify human agent (implement your notification system)
+    } else {
+      message.reply(`You said: "${message.body}". How else can I assist?`);
+    }
+  } else if (session.state === 'pending_human') {
+    message.reply('A human agent will be with you shortly.');
+  }
+
+  db.get('sessions').find({ from }).assign(session).write();
+});
+
+client.initialize();
